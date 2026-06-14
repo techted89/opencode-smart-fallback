@@ -709,6 +709,14 @@ type TuiPlugin = (api: TuiPluginApi, options?: PluginOptions, meta?: any) => voi
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
+// CLI entry point: `bun run plugins/opencode-smart-fallback.tsx --test`
+// Only runs when executed directly (not when imported as a module)
+if (typeof process !== "undefined" && Array.isArray(process.argv) && process.argv.includes("--test")) {
+  runAllTests()
+    .then((ok) => process.exit(ok ? 0 : 1))
+    .catch((e) => { console.error("Test runner error:", e); process.exit(1); });
+}
+
 const plugin: Plugin = async (input) => {
   const config = loadConfig();
   notificationsEnabled = config.notifications;
@@ -1484,13 +1492,6 @@ async function runAllTests() {
 
 // Uncomment to run all tests
 // runAllTests().catch(console.error);
-
-// CLI test runner
-if (typeof process !== "undefined" && process.argv.includes("--test")) {
-  runAllTests()
-    .then((ok) => process.exit(ok ? 0 : 1))
-    .catch((e) => { console.error("Test runner error:", e); process.exit(1); });
-}
 
 // ─── TUI Plugin ────────────────────────────────────────────────────────────────
 
