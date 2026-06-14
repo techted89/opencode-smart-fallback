@@ -78,8 +78,8 @@ Add `logLevel` config option (error/warn/info/debug).
 
 ### L5 — Context-Window-Aware Sorting
 Add "Largest Context" sort mode to ModelSelector.
-- **Branch:** `feat/context-sort`
-- **Status:** pending
+- **Branch:** `main` (direct commit)
+- **Status:** ✅ done
 
 ### L6 — Concurrency Guard for State
 Add mutex for concurrent state access from multiple hooks.

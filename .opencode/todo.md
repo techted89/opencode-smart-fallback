@@ -13,7 +13,6 @@
 ## M2: Integration
 ### T2.1: Enhance Key Rotation | agent:Worker
   - [x] S2.1.1: Modify `getNextKey` to use parallel key health checks
-- [x] S2.1.1: Modify `getNextKey` to use parallel key health checks
 - [x] S2.1.2: Update `chat.headers` to delegate key rotation to orchestrator
 
 ### T2.2: Improve Error Handling | agent:Worker

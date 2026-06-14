@@ -395,10 +395,34 @@ function log(level: "info" | "warn" | "error" | "debug", tag: string, message: s
 
 function parseRetryAfter(header: string | undefined): number | null {
   if (!header) return null;
-  const seconds = Number(header);
-  if (!isNaN(seconds) && seconds > 0) return seconds * 1000;
-  const parsed = Date.parse(header);
-  return !isNaN(parsed) ? parsed - Date.now() : null;
+
+  // Trim whitespace
+  const trimmed = header.trim();
+
+  // 1. Numeric seconds (including decimals, leading zeros)
+  const num = Number(trimmed);
+  if (!isNaN(num) && num >= 0) {
+    // Cap at 1 hour to prevent absurd wait times
+    return Math.min(num * 1000, 3600000);
+  }
+
+  // 2. Human-readable: "X seconds", "X minutes", "X second", "X minute"
+  const humanMatch = trimmed.match(/^(\d+)\s*(second|seconds|minute|minutes|sec|min)$/i);
+  if (humanMatch) {
+    const value = parseInt(humanMatch[1], 10);
+    const unit = humanMatch[2].toLowerCase();
+    if (unit.startsWith("min")) return Math.min(value * 60000, 3600000);
+    return Math.min(value * 1000, 3600000);
+  }
+
+  // 3. HTTP-date format (e.g., "Wed, 21 Oct 2015 07:28:00 GMT")
+  const parsed = Date.parse(trimmed);
+  if (!isNaN(parsed)) {
+    const delay = parsed - Date.now();
+    return delay > 0 ? Math.min(delay, 3600000) : null;
+  }
+
+  return null;
 }
 
 function withJitter(delayMs: number): number {
@@ -1482,6 +1506,55 @@ function testFormatDuration(): boolean {
   return true;
 }
 
+/** Test parseRetryAfter with various input formats */
+function testParseRetryAfter(): boolean {
+  console.log("\n14. Testing parseRetryAfter...");
+
+  // Null/undefined
+  if (parseRetryAfter(undefined) !== null) { console.log("  ✗ Undefined should return null"); return false; }
+  if (parseRetryAfter("") !== null) { console.log("  ✗ Empty should return null"); return false; }
+
+  // Numeric seconds
+  const r1 = parseRetryAfter("120");
+  if (r1 === null || r1 < 119000 || r1 > 121000) { console.log(`  ✗ '120' should be ~120000ms, got ${r1}`); return false; }
+
+  // Decimal seconds
+  const r2 = parseRetryAfter("30.5");
+  if (r2 === null || r2 < 30000 || r2 > 31000) { console.log(`  ✗ '30.5' should be ~30500ms, got ${r2}`); return false; }
+
+  // Leading zeros
+  const r3 = parseRetryAfter("005");
+  if (r3 === null || r3 < 4000 || r3 > 6000) { console.log(`  ✗ '005' should be ~5000ms, got ${r3}`); return false; }
+
+  // Whitespace
+  const r4 = parseRetryAfter("  60  ");
+  if (r4 === null || r4 < 59000 || r4 > 61000) { console.log(`  ✗ '  60  ' should be ~60000ms, got ${r4}`); return false; }
+
+  // Human-readable: seconds
+  const r5 = parseRetryAfter("45 seconds");
+  if (r5 === null || r5 < 44000 || r5 > 46000) { console.log(`  ✗ '45 seconds' should be ~45000ms, got ${r5}`); return false; }
+
+  // Human-readable: minutes
+  const r6 = parseRetryAfter("2 minutes");
+  if (r6 === null || r6 < 119000 || r6 > 121000) { console.log(`  ✗ '2 minutes' should be ~120000ms, got ${r6}`); return false; }
+
+  // Human-readable: short forms
+  const r7 = parseRetryAfter("30 sec");
+  if (r7 === null || r7 < 29000 || r7 > 31000) { console.log(`  ✗ '30 sec' should be ~30000ms, got ${r7}`); return false; }
+  const r8 = parseRetryAfter("1 min");
+  if (r8 === null || r8 < 59000 || r8 > 61000) { console.log(`  ✗ '1 min' should be ~60000ms, got ${r8}`); return false; }
+
+  // Capped at 1 hour
+  const r9 = parseRetryAfter("999999");
+  if (r9 === null || r9 > 3601000) { console.log(`  ✗ '999999' should be capped at 3600000ms, got ${r9}`); return false; }
+
+  // Zero = retry immediately (valid per HTTP spec)
+  if (parseRetryAfter("0") !== 0) { console.log("  ✗ '0' should be 0ms (retry immediately)"); return false; }
+
+  console.log("  ✓ parseRetryAfter: PASSED");
+  return true;
+}
+
 /** Run all new feature tests */
 async function testNewFeatures(): Promise<boolean> {
   console.log("\n=== Running New Feature Tests ===");
@@ -1494,6 +1567,7 @@ async function testNewFeatures(): Promise<boolean> {
     testKeyHealth(),
     testGetModelProviders(),
     testFormatDuration(),
+    testParseRetryAfter(),
   ];
   const allOk = results.every(r => r);
   if (allOk) {
