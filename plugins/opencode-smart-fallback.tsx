@@ -505,6 +505,16 @@ function filterCooldownProviders(state: PersistedState, models: string[]): strin
   return filtered.length > 0 ? filtered : models;
 }
 
+/** Remove expired provider cooldowns from state to prevent unbounded growth */
+function cleanStaleCooldowns(state: PersistedState): void {
+  const now = Date.now();
+  for (const [providerId, cd] of Object.entries(state.providerCooldowns)) {
+    if (now >= cd.until) {
+      delete state.providerCooldowns[providerId];
+    }
+  }
+}
+
 // ── Key Exhaustion Notification ──────────────────────────────────────────────
 
 interface KeyHealthReport {
@@ -725,6 +735,8 @@ const plugin: Plugin = async (input) => {
   const projectStatePath = join(input.directory, ".opencode", "smart-fallback-state.json");
   const statePath = config.statePath || projectStatePath;
   let state = loadState(statePath);
+  // Prune expired cooldowns on startup to prevent stale entries accumulating
+  cleanStaleCooldowns(state);
   const retryCounters: Record<string, number> = {};
   // Track which key was used for each session
   const sessionKeyMap: Record<string, { providerId: string, key: string }> = {};
@@ -921,6 +933,7 @@ const plugin: Plugin = async (input) => {
     },
 
     async dispose() {
+      cleanStaleCooldowns(state);
       saveState(state, statePath);
     },
   };
@@ -1366,6 +1379,8 @@ function testKeyHealth(): boolean {
     fallbackModels: [],
     maxRetries: 3,
     cooldownSeconds: 30,
+    contextThreshold: 0.85,
+    backoff: { initialDelayMs: 1000, maxDelayMs: 60000, multiplier: 2 },
     providerFreeModels: {},
   };
 

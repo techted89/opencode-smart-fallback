@@ -1,43 +1,35 @@
 # Project Context
 
-## Environment
-- Language: TypeScript (JSX)
-- Runtime: Bun
-- Build: tsc --noEmit
-- Test: bun run plugins/opencode-smart-fallback.tsx --test
-- Package Manager: npm / Bun
+## Final State — All work merged to `main`
 
-## GitHub
-- Repo: https://github.com/techted89/opencode-smart-fallback
-- Branch: main (up-to-date with origin/main)
-- Authenticated as: techthed89
+### Git Log
+```
+ff1d82b feat: comprehensive test coverage with formatDuration fix
+2652024 feat: auto test runner with npm scripts
+3a3fc36 docs: add improvement roadmap tracking document
+cdd6059 Initial commit: smart-fallback plugin
+```
 
-## PRs
-| # | Branch | Title | Status |
-|---|--------|-------|--------|
-| 1 | feat/auto-test-runner | feat: auto test runner with npm scripts | Open |
-| 2 | feat/test-coverage | feat: comprehensive test coverage for new features | Open |
+### PRs Merged (squash)
+| # | Branch | Title |
+|---|--------|-------|
+| 1 | feat/auto-test-runner | Auto test runner with npm scripts |
+| 2 | feat/test-coverage | Comprehensive test coverage + formatDuration fix |
 
-## Changes vs main
-- PR #1: CLI --test entry point, Array.isArray guard, npm scripts
-- PR #2: 8 new test suites, filterCooldownProviders fallback fix, formatDuration Math.floor fix
+### Review Fixes Applied
+- PR #1: `Array.isArray(process.argv)` guard (Gemini review), `precommit` → `validate` rename (CodeRabbit)
+- PR #2: `formatDuration` `Math.floor` fix (Gemini review)
 
-## Key Files
-- `plugins/opencode-smart-fallback.tsx` — Plugin source (all code + tests)
-- `package.json` — Dependencies + scripts
-- `IMPROVEMENTS.md` — Improvement roadmap (high/medium/low priority items)
-- `.github/ISSUE_TEMPLATE/improvement.md` — Improvement issue template
+### Test Status
+All 13 tests pass across 4 suites
 
-## Infrastructure
-- CI: Not yet configured in repo (template available in skill)
-- Git workflow skill: `/root/.config/opencode/skills/git-workflow/SKILL.md`
-  - Reusable pipeline for any project
-  - Branch naming, commit conventions, PR workflow, CI/CD templates
-  - Load via `skill("git-workflow")`
+### Standalone Git Workflow Skill
+`/root/.config/opencode/skills/git-workflow/SKILL.md` (262 lines)
+- Branch/convention docs, CI/CD templates, PR workflow
+- **Review agent interaction guide** added:
+  - CodeRabbit: `@coderabbitai review | full review | help`
+  - Gemini: `/gemini review | summary | help`
+- Reusable for any project via `skill("git-workflow")`
 
-## Test Status
-All 13 tests pass across 4 suites:
-1. State persistence ✓
-2. Orchestrator integration ✓
-3. Regression (5 tests) ✓
-4. New features (8 tests) ✓
+### Repo
+https://github.com/techted89/opencode-smart-fallback
