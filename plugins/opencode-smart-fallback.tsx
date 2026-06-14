@@ -245,7 +245,7 @@ function getModelProviders(models: ModelInfo[]): string[] {
 }
 
 /** Sort models by the given strategy */
-function sortModels(models: ModelInfo[], strategy: "free-first" | "alpha" | "provider"): ModelInfo[] {
+function sortModels(models: ModelInfo[], strategy: "free-first" | "alpha" | "provider" | "context"): ModelInfo[] {
   const sorted = [...models];
   switch (strategy) {
     case "free-first":
@@ -261,6 +261,14 @@ function sortModels(models: ModelInfo[], strategy: "free-first" | "alpha" | "pro
       sorted.sort((a, b) => {
         const pc = a.provider.localeCompare(b.provider);
         if (pc !== 0) return pc;
+        return a.id.localeCompare(b.id);
+      });
+      break;
+    case "context":
+      sorted.sort((a, b) => {
+        const ca = a.contextWindow ?? 0;
+        const cb = b.contextWindow ?? 0;
+        if (ca !== cb) return cb - ca; // largest first
         return a.id.localeCompare(b.id);
       });
       break;
@@ -1316,6 +1324,18 @@ function testSortModels(): boolean {
     return false;
   }
 
+  // Context sort (largest first)
+  const ctxModels: ModelInfo[] = [
+    { id: "a", provider: "opencode", isFree: true, name: "A", contextWindow: 8000 },
+    { id: "b", provider: "opencode", isFree: true, name: "B" },
+    { id: "c", provider: "opencode", isFree: true, name: "C", contextWindow: 128000 },
+  ];
+  const byContext = sortModels(ctxModels, "context");
+  if (byContext[0].id !== "c" || byContext[1].id !== "a" || byContext[2].id !== "b") {
+    console.log("  ✗ Context sort failed, got:", byContext.map(m => `${m.id}(${m.contextWindow ?? 0})`));
+    return false;
+  }
+
   console.log("  ✓ sortModels: PASSED");
   return true;
 }
@@ -1531,7 +1551,7 @@ function ModelSelectorDialog(
   // ── Reactive state ──
   const [availableModels, setAvailableModels] = createSignal<ModelInfo[]>([]);
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set(currentModels));
-  const [sortMode, setSortMode] = createSignal<"free-first" | "alpha" | "provider">("free-first");
+  const [sortMode, setSortMode] = createSignal<"free-first" | "alpha" | "provider" | "context">("free-first");
   const [providerFilter, setProviderFilter] = createSignal<string | null>(null);
   const [isRefreshing, setIsRefreshing] = createSignal(false);
   const [statusMsg, setStatusMsg] = createSignal("");
@@ -1637,14 +1657,14 @@ function ModelSelectorDialog(
           {/* Sort controls */}
           <box flexDirection="row" gap={1}>
             <text {...({ bold: true } as any)}>Sort:</text>
-            {(["free-first", "alpha", "provider"] as const).map((mode) => (
+            {(["free-first", "alpha", "provider", "context"] as const).map((mode) => (
               <text
                 {...({
                   color: sortMode() === mode ? "accent" : "muted",
                   onClick: () => setSortMode(mode),
                 } as any)}
               >
-                {mode === "free-first" ? "[Free First]" : mode === "alpha" ? "[A-Z]" : "[By Provider]"}
+                {mode === "free-first" ? "[Free First]" : mode === "alpha" ? "[A-Z]" : mode === "provider" ? "[By Provider]" : "[Context]"}
               </text>
             ))}
           </box>

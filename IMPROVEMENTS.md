@@ -44,8 +44,8 @@ Atomic writes with `.bak` fallback to prevent config corruption.
 
 ### M4 — Stale Cooldown Cleanup
 Auto-prune expired cooldowns from state on startup and dispose.
-- **Branch:** `feat/stale-cleanup`
-- **Status:** pending
+- **Branch:** `main` (direct commit)
+- **Status:** ✅ done
 - **PR:** —
 
 ### M5 — Per-Agent TUI Model Selector
