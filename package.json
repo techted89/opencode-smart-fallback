@@ -7,7 +7,7 @@
     "test": "bun run plugins/opencode-smart-fallback.tsx --test",
     "test:watch": "bun --watch run plugins/opencode-smart-fallback.tsx --test",
     "typecheck": "tsc --noEmit",
-    "precommit": "npm run typecheck && npm run test"
+    "validate": "npm run typecheck && npm run test"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.16.2",
