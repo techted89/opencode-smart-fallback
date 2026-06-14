@@ -553,10 +553,10 @@ function checkKeyHealth(state: PersistedState, merged: AgentFallbackConfig): Key
 function formatDuration(ms: number): string {
   if (ms <= 0) return "now";
   if (ms < 1000) return "<1s";
-  if (ms < 60000) return `${Math.ceil(ms / 1000)}s`;
-  if (ms < 3600000) return `${Math.ceil(ms / 60000)}m ${Math.ceil((ms % 60000) / 1000)}s`;
+  if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
   const hours = Math.floor(ms / 3600000);
-  const mins = Math.ceil((ms % 3600000) / 60000);
+  const mins = Math.floor((ms % 3600000) / 60000);
   return `${hours}h ${mins}m`;
 }
 
@@ -1433,7 +1433,7 @@ function testFormatDuration(): boolean {
   if (formatDuration(-1) !== "now") { console.log("  ✗ Negative should be 'now'"); return false; }
   if (formatDuration(500) !== "<1s") { console.log("  ✗ Expected '<1s'"); return false; }
   if (formatDuration(5000) !== "5s") { console.log("  ✗ Expected '5s'"); return false; }
-  if (formatDuration(65000) !== "2m 5s") { console.log("  ✗ Expected '2m 5s'"); return false; }
+  if (formatDuration(65000) !== "1m 5s") { console.log("  ✗ Expected '1m 5s'"); return false; }
   if (formatDuration(7200000) !== "2h 0m") { console.log("  ✗ Expected '2h 0m'"); return false; }
   console.log("  ✓ formatDuration: PASSED");
   return true;
