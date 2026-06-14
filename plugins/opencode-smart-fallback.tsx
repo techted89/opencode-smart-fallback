@@ -22,7 +22,7 @@
  */
 
 import type { Plugin, Config, Hooks, PluginOptions } from "@opencode-ai/plugin";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
 import { createSignal } from "solid-js";
@@ -678,8 +678,23 @@ function saveState(state: PersistedState, configPath: string): void {
   try {
     const dir = dirname(configPath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    // Backup existing file before overwrite
+    const bakPath = configPath + ".bak";
+    if (existsSync(configPath)) {
+      copyFileSync(configPath, bakPath);
+    }
     writeFileSync(configPath, JSON.stringify(state, null, 2), "utf-8");
-  } catch {}
+  } catch (e) {
+    log("error", "State Save", `Failed to save state to ${configPath}: ${e}`);
+    // Attempt recovery from backup
+    const bakPath = configPath + ".bak";
+    if (existsSync(bakPath)) {
+      try {
+        copyFileSync(bakPath, configPath);
+        log("warn", "State Save", `Recovered state from ${bakPath}`);
+      } catch {}
+    }
+  }
 }
 
 function getNextKey(state: PersistedState, providerId: string, keys: string[]): string {
