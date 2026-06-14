@@ -56,6 +56,8 @@ interface SmartFallbackConfig {
   agents: Record<string, Partial<AgentFallbackConfig>>;
   statePath?: string;
   notifications: boolean;
+  /** Minimum log level to display. Default: "info" */
+  logLevel?: "error" | "warn" | "info" | "debug";
 }
 
 interface ModelCooldown {
@@ -341,6 +343,7 @@ const DEFAULT_CONFIG: SmartFallbackConfig = {
   },
   agents: {},
   notifications: true,
+  logLevel: "info",
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -383,8 +386,18 @@ function writeDefaultConfig(): void {
 }
 
 let notificationsEnabled = true;
+let minLogLevel = 1; // 0=error, 1=warn, 2=info, 3=debug
+const LOG_LEVEL_MAP: Record<string, number> = { error: 0, warn: 1, info: 2, debug: 3 };
+const LOG_LEVEL_NAMES = ["error", "warn", "info", "debug"] as const;
+
+function setLogLevel(level: string): void {
+  const idx = LOG_LEVEL_MAP[level];
+  if (idx !== undefined) minLogLevel = idx;
+}
+
 function log(level: "info" | "warn" | "error" | "debug", tag: string, message: string): void {
   if (!notificationsEnabled) return;
+  if (LOG_LEVEL_MAP[level] > minLogLevel) return;
   const prefix = `[smart-fallback:${level}]`;
   switch (level) {
     case "error": console.error(`${prefix} ${tag}: ${message}`); break;
@@ -762,6 +775,7 @@ if (typeof process !== "undefined" && Array.isArray(process.argv) && process.arg
 const plugin: Plugin = async (input) => {
   const config = loadConfig();
   notificationsEnabled = config.notifications;
+  if (config.logLevel) setLogLevel(config.logLevel);
   writeDefaultConfig();
   // Use project directory for shared state across agents in the same project
   const projectStatePath = join(input.directory, ".opencode", "smart-fallback-state.json");
