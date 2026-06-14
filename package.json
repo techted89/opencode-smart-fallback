@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "bun run plugins/opencode-smart-fallback.tsx --test",
+    "test:watch": "bun --watch run plugins/opencode-smart-fallback.tsx --test",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm run test"
+  },
   "dependencies": {
     "@opencode-ai/plugin": "1.16.2",
     "@opencode-ai/sdk": "latest",
