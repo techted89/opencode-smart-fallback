@@ -1,0 +1,16 @@
+{
+  "name": "opencode-smart-fallback",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@opencode-ai/plugin": "1.16.2",
+    "@opencode-ai/sdk": "latest",
+    "@opentui/solid": "^0.4.1",
+    "solid-js": "^1.9.13"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^25.9.3"
+  }
+}

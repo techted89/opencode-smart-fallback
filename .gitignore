@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.bak
+.opencode/smart-fallback-state.json
+.opencode/archive/
+.env
+*.log
