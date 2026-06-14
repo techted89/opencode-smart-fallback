@@ -500,7 +500,9 @@ function filterCooldownProviders(state: PersistedState, models: string[]): strin
     }
   }
   if (cooledProviders.size === 0) return models;
-  return models.filter((m) => !cooledProviders.has(extractProvider(m)));
+  const filtered = models.filter((m) => !cooledProviders.has(extractProvider(m)));
+  // Fallback to unfiltered chain if all providers are cooled down
+  return filtered.length > 0 ? filtered : models;
 }
 
 // ── Key Exhaustion Notification ──────────────────────────────────────────────
@@ -1100,14 +1102,374 @@ async function testRegression() {
   return true;
 }
 
+// ─── New Feature Unit Tests ───────────────────────────────────────────────────
+
+/** Test provider cooldown (set, check, clear) */
+function testProviderCooldown(): boolean {
+  console.log("\n6. Testing provider cooldown...");
+  const state: PersistedState = { models: {}, keys: {}, providerCooldowns: {}, version: STATE_VERSION };
+
+  // Initially no cooldown
+  if (isProviderOnCooldown(state, "openrouter")) {
+    console.log("  ✗ Provider initially should not be on cooldown");
+    return false;
+  }
+
+  // Set cooldown for 1 hour
+  setProviderCooldown(state, "openrouter", 3600000);
+
+  if (!isProviderOnCooldown(state, "openrouter")) {
+    console.log("  ✗ Provider should be on cooldown after setProviderCooldown");
+    return false;
+  }
+
+  // Non-cooldowned provider should still be unaffected
+  if (isProviderOnCooldown(state, "opencode")) {
+    console.log("  ✗ Unrelated provider should not be on cooldown");
+    return false;
+  }
+
+  // Clear cooldown
+  clearProviderCooldown(state, "openrouter");
+  if (isProviderOnCooldown(state, "openrouter")) {
+    console.log("  ✗ Provider should not be on cooldown after clear");
+    return false;
+  }
+
+  // Test exponential escalation
+  setProviderCooldown(state, "test-provider", 1000);
+  const firstDuration = state.providerCooldowns["test-provider"].until - Date.now();
+  if (firstDuration < 800) {
+    console.log(`  ✗ First cooldown duration should be ~1000ms, got ${firstDuration}ms`);
+    return false;
+  }
+  setProviderCooldown(state, "test-provider", 1000);
+  const secondDuration = state.providerCooldowns["test-provider"].until - Date.now();
+  if (secondDuration < firstDuration * 1.5) {
+    console.log(`  ✗ Second cooldown should escalate (>${firstDuration}ms, got ${secondDuration}ms)`);
+    return false;
+  }
+  // Consecutive failures
+  if (state.providerCooldowns["test-provider"].consecutiveFailures !== 2) {
+    console.log(`  ✗ Expected 2 consecutive failures, got ${state.providerCooldowns["test-provider"].consecutiveFailures}`);
+    return false;
+  }
+
+  console.log("  ✓ Provider cooldown: PASSED");
+  return true;
+}
+
+/** Test filterCooldownProviders */
+function testFilterCooldownProviders(): boolean {
+  console.log("\n7. Testing filterCooldownProviders...");
+  const state: PersistedState = { models: {}, keys: {}, providerCooldowns: {}, version: STATE_VERSION };
+
+  const models = ["openrouter/a", "opencode/b", "openrouter/c", "mistral/d"];
+
+  // No cooldowns → all models pass through
+  const allPass = filterCooldownProviders(state, models);
+  if (allPass.length !== 4) {
+    console.log("  ✗ All models should pass when no cooldowns");
+    return false;
+  }
+
+  // Cool down openrouter provider
+  state.providerCooldowns["openrouter"] = { until: Date.now() + 60000, consecutiveFailures: 1 };
+  const filtered = filterCooldownProviders(state, models);
+  if (filtered.length !== 2 || filtered.includes("openrouter/a") || filtered.includes("openrouter/c")) {
+    console.log("  ✗ OpenRouter models should be filtered out, got:", filtered);
+    return false;
+  }
+  if (filtered[0] !== "opencode/b" || filtered[1] !== "mistral/d") {
+    console.log("  ✗ Remaining models should preserve order: opencode/b, mistral/d, got:", filtered);
+    return false;
+  }
+
+  // All providers on cooldown → fallback to unfiltered
+  state.providerCooldowns["opencode"] = { until: Date.now() + 60000, consecutiveFailures: 1 };
+  state.providerCooldowns["mistral"] = { until: Date.now() + 60000, consecutiveFailures: 1 };
+  const allCooled = filterCooldownProviders(state, models);
+  if (!allCooled.includes("openrouter/a")) {
+    console.log("  ✗ Should fallback to original list when all providers cooled, got:", allCooled);
+    return false;
+  }
+
+  // Expired cooldown → models pass through naturally
+  state.providerCooldowns = {};  // clean slate
+  state.providerCooldowns["openrouter"] = { until: Date.now() - 1000, consecutiveFailures: 1 };
+  const expiredPass = filterCooldownProviders(state, models);
+  if (expiredPass.length !== 4) {
+    console.log("  ✗ Expired cooldowns should not filter");
+    return false;
+  }
+
+  console.log("  ✓ filterCooldownProviders: PASSED");
+  return true;
+}
+
+/** Test interleaveProviders */
+function testInterleaveProviders(): boolean {
+  console.log("\n8. Testing interleaveProviders...");
+
+  // Single element
+  const single = interleaveProviders(["opencode/a"]);
+  if (single.length !== 1 || single[0] !== "opencode/a") {
+    console.log("  ✗ Single element interleave failed");
+    return false;
+  }
+
+  // Empty
+  const empty = interleaveProviders([]);
+  if (empty.length !== 0) {
+    console.log("  ✗ Empty interleave should return empty");
+    return false;
+  }
+
+  // Single provider group (no interleaving needed)
+  const sameProvider = interleaveProviders(["opencode/a", "opencode/b", "opencode/c"]);
+  if (sameProvider.length !== 3) {
+    console.log("  ✗ Same provider interleave should preserve order");
+    return false;
+  }
+
+  // Two providers round-robin
+  const twoProviders = ["opencode/a", "opencode/b", "openrouter/c", "openrouter/d"];
+  const interl = interleaveProviders(twoProviders);
+  // Expected: opencode/a, openrouter/c, opencode/b, openrouter/d
+  if (interl.length !== 4) {
+    console.log("  ✗ Length should be 4, got", interl.length);
+    return false;
+  }
+  if (interl[0] !== "opencode/a" || interl[1] !== "openrouter/c" || interl[2] !== "opencode/b" || interl[3] !== "openrouter/d") {
+    console.log("  ✗ Interleave pattern wrong, expected [opencode/a, openrouter/c, opencode/b, openrouter/d], got", interl);
+    return false;
+  }
+
+  // Three providers round-robin with uneven groups
+  const threeProviders = ["openrouter/x", "openrouter/y", "opencode/a", "mistral/1", "opencode/b"];
+  const interl3 = interleaveProviders(threeProviders);
+  // Expected: openrouter/x, opencode/a, mistral/1, openrouter/y, opencode/b
+  if (interl3.length !== 5) {
+    console.log("  ✗ 3-provider interleave length should be 5, got", interl3.length);
+    return false;
+  }
+  if (interl3[0] !== "openrouter/x" || interl3[1] !== "opencode/a" || interl3[2] !== "mistral/1" || interl3[3] !== "openrouter/y" || interl3[4] !== "opencode/b") {
+    console.log("  ✗ 3-provider interleave pattern wrong, got", interl3);
+    return false;
+  }
+
+  console.log("  ✓ interleaveProviders: PASSED");
+  return true;
+}
+
+/** Test sortModels with all strategies */
+function testSortModels(): boolean {
+  console.log("\n9. Testing sortModels...");
+  const models: ModelInfo[] = [
+    { id: "opencode/z", provider: "opencode", isFree: false, name: "Z Paid" },
+    { id: "opencode/a-free", provider: "opencode", isFree: true, name: "A Free" },
+    { id: "openrouter/b-paid", provider: "openrouter", isFree: false, name: "B Paid" },
+    { id: "openrouter/c-free", provider: "openrouter", isFree: true, name: "C Free" },
+  ];
+
+  // Alpha sort  
+  const alpha = sortModels(models, "alpha");
+  const alphaIds = alpha.map(m => m.id);
+  if (alphaIds[0] !== "opencode/a-free" || alphaIds[alphaIds.length - 2] !== "openrouter/b-paid" || alphaIds[alphaIds.length - 1] !== "openrouter/c-free") {
+    console.log("  ✗ Alpha sort failed, got:", alphaIds);
+    return false;
+  }
+
+  // Free-first sort
+  const freeFirst = sortModels(models, "free-first");
+  if (freeFirst[0].isFree !== true || freeFirst[1].isFree !== true || freeFirst[2].isFree !== false) {
+    console.log("  ✗ Free-first sort failed, got:", freeFirst.map(m => `${m.id}(${m.isFree})`));
+    return false;
+  }
+
+  // Provider sort
+  const byProvider = sortModels(models, "provider");
+  // opencode models first (alphabetically), then openrouter
+  if (byProvider[0].provider !== "opencode" || byProvider[byProvider.length - 1].provider !== "openrouter") {
+    console.log("  ✗ Provider sort failed, got:", byProvider.map(m => `${m.id}(${m.provider})`));
+    return false;
+  }
+
+  console.log("  ✓ sortModels: PASSED");
+  return true;
+}
+
+/** Test filterModelsByProvider and extractProvider */
+function testFilterAndExtract(): boolean {
+  console.log("\n10. Testing filterModelsByProvider and extractProvider...");
+  const models: ModelInfo[] = [
+    { id: "opencode/a", provider: "opencode", isFree: true, name: "A" },
+    { id: "openrouter/b", provider: "openrouter", isFree: true, name: "B" },
+  ];
+
+  // No filter returns all
+  if (filterModelsByProvider(models, null).length !== 2) {
+    console.log("  ✗ Null filter should return all");
+    return false;
+  }
+
+  // Filter by provider
+  const filtered = filterModelsByProvider(models, "opencode");
+  if (filtered.length !== 1 || filtered[0].id !== "opencode/a") {
+    console.log("  ✗ Provider filter failed");
+    return false;
+  }
+
+  // extractProvider
+  if (extractProvider("openrouter/nvidia/nemotron:free") !== "openrouter") {
+    console.log("  ✗ extractProvider failed for multi-part ID");
+    return false;
+  }
+  if (extractProvider("opencode/deepseek") !== "opencode") {
+    console.log("  ✗ extractProvider failed for simple ID");
+    return false;
+  }
+  if (extractProvider("unknown") !== "unknown") {
+    console.log("  ✗ extractProvider should return 'unknown' for no-prefix ID");
+    return false;
+  }
+
+  console.log("  ✓ filterModelsByProvider and extractProvider: PASSED");
+  return true;
+}
+
+/** Test checkKeyHealth and notifyKeyHealth */
+function testKeyHealth(): boolean {
+  console.log("\n11. Testing key health monitoring...");
+  const state: PersistedState = {
+    models: {},
+    keys: {
+      "provider-a": { currentIndex: 0, keys: ["key-1", "key-2"], failures: [0, 0], until: [0, 0] },
+      "provider-b": { currentIndex: 0, keys: ["key-1", "key-2", "key-3"], failures: [3, 2, 0], until: [Date.now() + 60000, Date.now() + 30000, 0] },
+    },
+    providerCooldowns: {},
+    version: STATE_VERSION,
+  };
+  const config: AgentFallbackConfig = {
+    apiKeys: {
+      "provider-a": ["key-1", "key-2"],
+      "provider-b": ["key-1", "key-2", "key-3"],
+    },
+    fallbackModels: [],
+    maxRetries: 3,
+    cooldownSeconds: 30,
+    providerFreeModels: {},
+  };
+
+  // Test checkKeyHealth
+  const reports = checkKeyHealth(state, config);
+  if (reports.length !== 2) {
+    console.log("  ✗ Expected 2 reports, got", reports.length);
+    return false;
+  }
+
+  // Provider A: all healthy
+  const reportA = reports.find(r => r.providerId === "provider-a")!;
+  if (reportA.healthyKeys !== 2 || reportA.exhaustedKeys !== 0 || reportA.allExhausted) {
+    console.log("  ✗ Provider A should have all healthy keys, got:", reportA);
+    return false;
+  }
+
+  // Provider B: 1 healthy, 2 exhausted
+  const reportB = reports.find(r => r.providerId === "provider-b")!;
+  if (reportB.healthyKeys !== 1 || reportB.exhaustedKeys !== 2 || reportB.allExhausted) {
+    console.log("  ✗ Provider B should have 1/3 healthy keys, got:", reportB);
+    return false;
+  }
+
+  // Test notifyKeyHealth with alreadyNotified set
+  const alreadyNotified = new Set<string>();
+  const logged: string[] = [];
+  const logFn = (_level: string, _tag: string, msg: string) => { logged.push(msg); };
+  notifyKeyHealth(state, config, alreadyNotified, logFn as any);
+
+  // Should get notifications for provider-b (1/3 healthy) 
+  const lowKeyMsg = logged.find(m => m.includes("provider-b") && m.includes("Only 1/3"));
+  if (!lowKeyMsg) {
+    console.log("  ✗ Should notify low key health for provider-b, got:", logged);
+    return false;
+  }
+
+  // Second call should be silenced (alreadyNotified)
+  const logged2: string[] = [];
+  notifyKeyHealth(state, config, alreadyNotified, ((_l: string, _t: string, m: string) => { logged2.push(m); }) as any);
+  if (logged2.length > 0) {
+    console.log("  ✗ AlreadyNotified should suppress duplicate notifications, got:", logged2);
+    return false;
+  }
+
+  console.log("  ✓ Key health monitoring: PASSED");
+  return true;
+}
+
+/** Test getModelProviders */
+function testGetModelProviders(): boolean {
+  console.log("\n12. Testing getModelProviders...");
+  const models: ModelInfo[] = [
+    { id: "a", provider: "opencode", isFree: true, name: "A" },
+    { id: "b", provider: "openrouter", isFree: true, name: "B" },
+    { id: "c", provider: "opencode", isFree: false, name: "C" },
+  ];
+
+  const providers = getModelProviders(models);
+  if (providers.length !== 2 || providers[0] !== "opencode" || providers[1] !== "openrouter") {
+    console.log("  ✗ Expected [opencode, openrouter], got:", providers);
+    return false;
+  }
+
+  console.log("  ✓ getModelProviders: PASSED");
+  return true;
+}
+
+/** Test formatDuration */
+function testFormatDuration(): boolean {
+  console.log("\n13. Testing formatDuration...");
+  if (formatDuration(0) !== "now") { console.log("  ✗ Expected 'now'"); return false; }
+  if (formatDuration(-1) !== "now") { console.log("  ✗ Negative should be 'now'"); return false; }
+  if (formatDuration(500) !== "<1s") { console.log("  ✗ Expected '<1s'"); return false; }
+  if (formatDuration(5000) !== "5s") { console.log("  ✗ Expected '5s'"); return false; }
+  if (formatDuration(65000) !== "2m 5s") { console.log("  ✗ Expected '2m 5s'"); return false; }
+  if (formatDuration(7200000) !== "2h 0m") { console.log("  ✗ Expected '2h 0m'"); return false; }
+  console.log("  ✓ formatDuration: PASSED");
+  return true;
+}
+
+/** Run all new feature tests */
+async function testNewFeatures(): Promise<boolean> {
+  console.log("\n=== Running New Feature Tests ===");
+  const results = [
+    testProviderCooldown(),
+    testFilterCooldownProviders(),
+    testInterleaveProviders(),
+    testSortModels(),
+    testFilterAndExtract(),
+    testKeyHealth(),
+    testGetModelProviders(),
+    testFormatDuration(),
+  ];
+  const allOk = results.every(r => r);
+  if (allOk) {
+    console.log("\n✓ All new feature tests PASSED");
+  } else {
+    console.log("\n✗ Some new feature tests FAILED");
+  }
+  return allOk;
+}
+
 // Run all tests
 async function runAllTests() {
   try {
     const stateTest = await testStatePersistence();
     const orchestratorTest = await testOrchestratorIntegration();
     const regressionTest = await testRegression();
+    const newFeaturesTest = await testNewFeatures();
     
-    if (stateTest && orchestratorTest && regressionTest) {
+    if (stateTest && orchestratorTest && regressionTest && newFeaturesTest) {
       console.log("\n🎉 ALL TESTS PASSED! Fallback plugin is working correctly.");
       return true;
     } else {
@@ -1122,6 +1484,13 @@ async function runAllTests() {
 
 // Uncomment to run all tests
 // runAllTests().catch(console.error);
+
+// CLI test runner
+if (typeof process !== "undefined" && process.argv.includes("--test")) {
+  runAllTests()
+    .then((ok) => process.exit(ok ? 0 : 1))
+    .catch((e) => { console.error("Test runner error:", e); process.exit(1); });
+}
 
 // ─── TUI Plugin ────────────────────────────────────────────────────────────────
 
