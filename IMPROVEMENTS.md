@@ -73,8 +73,8 @@ Buttons to backup/share model/key configuration.
 
 ### L4 — Configurable Log Verbosity
 Add `logLevel` config option (error/warn/info/debug).
-- **Branch:** `feat/log-verbosity`
-- **Status:** pending
+- **Branch:** `main` (direct commit)
+- **Status:** ✅ done
 
 ### L5 — Context-Window-Aware Sorting
 Add "Largest Context" sort mode to ModelSelector.
@@ -88,5 +88,5 @@ Add mutex for concurrent state access from multiple hooks.
 
 ### L7 — Robust Retry-After Parsing
 Handle non-standard `Retry-After` header formats.
-- **Branch:** `feat/retryafter-robust`
-- **Status:** pending
+- **Branch:** `main` (direct commit)
+- **Status:** ✅ done
